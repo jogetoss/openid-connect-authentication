@@ -1,6 +1,8 @@
 # Description
 
-This repository is meant to serve as a general template for how to set up new repositories in the JogetOSS organization. 
+The OpenID Connect Directory Manager plugin extends the Security Enhanced Directory Manager to allow users to single sign-on (SSO) to [Joget](https://www.joget.org) using OpenID Connect.
+
+Documentation is available at [OpenID Connect Directory Manager Plugin](https://dev.joget.org/community/display/marketplace/OpenID+Connect+Directory+Manager+Plugin).
 
 # Getting Help
 
