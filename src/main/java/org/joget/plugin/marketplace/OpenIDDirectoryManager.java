@@ -82,7 +82,7 @@ import org.springframework.security.web.savedrequest.SavedRequest;
 
 public class OpenIDDirectoryManager extends SecureDirectoryManager {
 
-    public static SecureDirectoryManagerImpl dirManager;
+    public SecureDirectoryManagerImpl dirManager;
 
     @Override
     public String getName() {
@@ -96,7 +96,7 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
 
     @Override
     public String getVersion() {
-        return "7.0.3";
+        return "7.0.4";
     }
 
     @Override
@@ -121,7 +121,7 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
             for (int i = 2; i <= SecureDirectoryManagerImpl.NUM_OF_DM; i++) {
                 addOnJson += ",{\nname : 'dm" + i + "',\n label : '@@app.edm.label.addon@@',\n type : 'elementselect',\n";
                 addOnJson += "options_ajax : '[CONTEXT_PATH]/web/json/plugin/org.joget.plugin.directory.SecureDirectoryManager/service',\n";
-                addOnJson += "url : '[CONTEXT_PATH]/web/property/json[APP_PATH]/getPropertyOptions'\n}";
+                addOnJson += "url : '[CONTEXT_PATH]/web/property/json/getPropertyOptions'\n}";
             }
         }
 

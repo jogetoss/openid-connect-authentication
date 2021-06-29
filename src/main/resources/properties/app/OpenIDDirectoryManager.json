@@ -158,7 +158,7 @@
                         "label": "@@app.edm.label.addon@@",
                         "type": "elementselect",
                         "options_ajax": "[CONTEXT_PATH]/web/json/plugin/org.joget.plugin.directory.SecureDirectoryManager/service",
-                        "url": "[CONTEXT_PATH]/web/property/json[APP_PATH]/getPropertyOptions"
+                        "url": "[CONTEXT_PATH]/web/property/json/getPropertyOptions"
                     }
                     %s
                 ]
