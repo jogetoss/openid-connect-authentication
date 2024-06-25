@@ -88,17 +88,17 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
 
     @Override
     public String getName() {
-        return "OpenID Connect Directory Manager - Azure Hotfix";
+        return "OpenID Connect Directory Manager";
     }
 
     @Override
     public String getDescription() {
-        return "Directory Manager with support for OpenID Connect - Azure Hotfix";
+        return "Directory Manager with support for OpenID Connect";
     }
 
     @Override
     public String getVersion() {
-        return "7.0.4.hotfix";
+        return "7.0.5";
     }
 
     @Override
