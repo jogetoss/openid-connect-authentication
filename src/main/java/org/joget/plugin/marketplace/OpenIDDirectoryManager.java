@@ -7,6 +7,8 @@ import java.util.Set;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+
+import com.nimbusds.openid.connect.sdk.claims.ClaimsSet;
 import org.joget.apps.app.service.AppUtil;
 import org.joget.apps.workflow.security.WorkflowUserDetails;
 import org.joget.commons.util.LogUtil;
@@ -96,7 +98,7 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
 
     @Override
     public String getVersion() {
-        return "7.0.4";
+        return "7.0.5";
     }
 
     @Override
@@ -213,8 +215,11 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
                 }
                 if (authCode != null) {
                     String code = URLDecoder.decode(authCode.getValue(), "UTF-8");
-                    AccessToken accessToken = getTokenForCode(code, nonce);
+                    Object[] accessTokenArray = getTokenForCode(code, nonce);
+                    AccessToken accessToken = (AccessToken) accessTokenArray[0];
+                    ClaimsSet idTokenClaims = (ClaimsSet) accessTokenArray[1];
                     UserInfo userInfo = getUserInfo(accessToken);
+                    userInfo.putAll(idTokenClaims);
                     doLogin(userInfo, request, response);
                 }
             } else {
@@ -231,8 +236,18 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
         DirectoryManagerProxyImpl dm = (DirectoryManagerProxyImpl) AppUtil.getApplicationContext().getBean("directoryManager");
         SecureDirectoryManagerImpl dmImpl = (SecureDirectoryManagerImpl) dm.getDirectoryManagerImpl();
 
-        URI issuerURI = new URI(dmImpl.getPropertyString("issuerUrl"));
-        URL providerConfigurationURL = issuerURI.resolve("/.well-known/openid-configuration").toURL();
+        //URI issuerURI = new URI(dmImpl.getPropertyString("issuerUrl"));
+        //URL providerConfigurationURL = issuerURI.resolve("/.well-known/openid-configuration").toURL();
+
+        String issuerUrl = dmImpl.getPropertyString("issuerUrl");
+
+        // Remove trailing slash if present
+        if (issuerUrl.endsWith("/")) {
+            issuerUrl = issuerUrl.substring(0, issuerUrl.length() - 1);
+        }
+
+        URI issuerURI = new URI(issuerUrl + "/.well-known/openid-configuration");
+        URL providerConfigurationURL = issuerURI.toURL();
         InputStream stream = providerConfigurationURL.openStream();
         //OIDCClientInformation clientInformation = null;
         // Read all data from URL
@@ -339,7 +354,7 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
      * @throws URISyntaxException
      * @throws IOException
      */
-    public AccessToken getTokenForCode(String code, Nonce nonce) throws URISyntaxException, IOException {
+    public Object[] getTokenForCode(String code, Nonce nonce) throws URISyntaxException, IOException {
         AuthorizationCode authcode = new AuthorizationCode(code);
         URI tokenEndpoint;
         URI jwkSetUri;
@@ -394,7 +409,22 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
         }
 
         // The required parameters
-        Issuer iss = new Issuer(dmImpl.getPropertyString("issuerUrl"));
+        // Get the issuer URL from properties
+        String issuerUrl = dmImpl.getPropertyString("issuerUrl");
+
+        // Check if the issuer URL contains "auth0" and adjust accordingly
+        if (issuerUrl.contains("auth0")) {
+            // Append a slash to the issuer URL if it contains "auth0"
+            issuerUrl = issuerUrl.endsWith("/") ? issuerUrl : issuerUrl + "/";
+        } else if (issuerUrl.endsWith("/")){
+            // else remove ending slash
+            issuerUrl = issuerUrl.substring(0, issuerUrl.length() - 1);
+        }
+
+        // Create Issuer object
+        Issuer iss = new Issuer(issuerUrl);
+
+        //Issuer iss = new Issuer(dmImpl.getPropertyString("issuerUrl"));
         JWSAlgorithm jwsAlg = JWSAlgorithm.RS256;
         URL jwkSetURL = jwkSetUri.toURL();
 
@@ -403,15 +433,18 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
 
         // Set the expected nonce, leave null if none
         Nonce expectedNonce = nonce; // or null
-
+        ClaimsSet idTokenInfo = null;
         try {
             IDTokenClaimsSet claims = validator.validate(idToken, expectedNonce);
+            idTokenInfo = (ClaimsSet) claims;
         } catch (BadJOSEException | JOSEException e) {
             LogUtil.error(OpenIDDirectoryManager.class.getName(), e, "Invalid Claims");
             return null;
         }
-        return accessToken;
+        return new Object[]{accessToken, idTokenInfo} ;
     }
+
+
 
     void doLogin(UserInfo userInfo, HttpServletRequest request, HttpServletResponse response) throws IOException {
         try {
