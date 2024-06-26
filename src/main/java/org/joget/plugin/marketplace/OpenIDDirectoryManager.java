@@ -239,7 +239,14 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
         //URI issuerURI = new URI(dmImpl.getPropertyString("issuerUrl"));
         //URL providerConfigurationURL = issuerURI.resolve("/.well-known/openid-configuration").toURL();
 
-        URI issuerURI = new URI(dmImpl.getPropertyString("issuerUrl") + "/.well-known/openid-configuration");
+        String issuerUrl = dmImpl.getPropertyString("issuerUrl");
+
+        // Remove trailing slash if present
+        if (issuerUrl.endsWith("/")) {
+            issuerUrl = issuerUrl.substring(0, issuerUrl.length() - 1);
+        }
+
+        URI issuerURI = new URI(issuerUrl + "/.well-known/openid-configuration");
         URL providerConfigurationURL = issuerURI.toURL();
         InputStream stream = providerConfigurationURL.openStream();
         //OIDCClientInformation clientInformation = null;
@@ -402,7 +409,22 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
         }
 
         // The required parameters
-        Issuer iss = new Issuer(dmImpl.getPropertyString("issuerUrl"));
+        // Get the issuer URL from properties
+        String issuerUrl = dmImpl.getPropertyString("issuerUrl");
+
+        // Check if the issuer URL contains "auth0" and adjust accordingly
+        if (issuerUrl.contains("auth0")) {
+            // Append a slash to the issuer URL if it contains "auth0"
+            issuerUrl = issuerUrl.endsWith("/") ? issuerUrl : issuerUrl + "/";
+        } else if (issuerUrl.endsWith("/")){
+            // else remove ending slash
+            issuerUrl = issuerUrl.substring(0, issuerUrl.length() - 1);
+        }
+
+        // Create Issuer object
+        Issuer iss = new Issuer(issuerUrl);
+
+        //Issuer iss = new Issuer(dmImpl.getPropertyString("issuerUrl"));
         JWSAlgorithm jwsAlg = JWSAlgorithm.RS256;
         URL jwkSetURL = jwkSetUri.toURL();
 
