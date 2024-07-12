@@ -69,6 +69,7 @@ import com.nimbusds.openid.connect.sdk.UserInfoResponse;
 import com.nimbusds.openid.connect.sdk.claims.IDTokenClaimsSet;
 import com.nimbusds.openid.connect.sdk.claims.UserInfo;
 import com.nimbusds.openid.connect.sdk.op.OIDCProviderMetadata;
+import com.nimbusds.openid.connect.sdk.token.OIDCTokens;
 import com.nimbusds.openid.connect.sdk.validators.IDTokenValidator;
 import java.io.IOException;
 import java.io.InputStream;
@@ -79,10 +80,15 @@ import java.util.List;
 import java.net.URI;
 import java.net.URLDecoder;
 import net.sf.ehcache.Cache;
+import org.joget.directory.dao.UserMetaDataDao;
+import org.joget.directory.model.UserMetaData;
 import org.springframework.security.web.savedrequest.HttpSessionRequestCache;
 import org.springframework.security.web.savedrequest.SavedRequest;
 
 public class OpenIDDirectoryManager extends SecureDirectoryManager {
+    
+    public static final String DEFAULT_USER_META_ACCESS_TOKEN_KEY = "oidcAccessToken";
+    public static final String DEFAULT_USER_META_REFRESH_TOKEN_KEY = "oidcRefreshToken";
 
     public SecureDirectoryManagerImpl dirManager;
 
@@ -98,7 +104,7 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
 
     @Override
     public String getVersion() {
-        return "7.0.5";
+        return "7.0.6";
     }
 
     @Override
@@ -176,12 +182,17 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
 
                 Cache cache = (Cache) AppUtil.getApplicationContext().getBean("nonceCache");
                 cache.put(element);
+                
+                String redirect = request.getParameter("redirect");
+                if(redirect != null && redirect.trim().length() > 0){
+                    request.getSession().setAttribute("oidcRedirect", request.getParameter("redirect"));
+                }
 
                 // Generate the auth endpoint URI to request the auth code
                 URI authorizationEndpoint = getAuthorizationEndpointUri(nonce, state);
                 // Create the user agent and make the call to the auth endpoint
                 response.sendRedirect(authorizationEndpoint.toString());
-
+                
             } else if (request.getParameter("code") != null) {
                 //receive response from identity provider
                 AuthenticationResponse authResp = null;
@@ -216,11 +227,15 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
                 if (authCode != null) {
                     String code = URLDecoder.decode(authCode.getValue(), "UTF-8");
                     Object[] accessTokenArray = getTokenForCode(code, nonce);
-                    AccessToken accessToken = (AccessToken) accessTokenArray[0];
+                    
+                    OIDCTokens oidcTokens = (OIDCTokens) accessTokenArray[0];
+                    AccessToken accessToken = oidcTokens.getAccessToken();
+                    RefreshToken refreshToken = oidcTokens.getRefreshToken();
+                    
                     ClaimsSet idTokenClaims = (ClaimsSet) accessTokenArray[1];
                     UserInfo userInfo = getUserInfo(accessToken);
                     userInfo.putAll(idTokenClaims);
-                    doLogin(userInfo, request, response);
+                    doLogin(userInfo, request, response, accessToken, refreshToken);
                 }
             } else {
                 response.sendError(HttpServletResponse.SC_NO_CONTENT);
@@ -404,9 +419,6 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
         // Get the ID and access token, the server may also return a refresh token
         JWT idToken = successResponse.getOIDCTokens().getIDToken();
         AccessToken accessToken = successResponse.getOIDCTokens().getAccessToken();
-        if (successResponse.getOIDCTokens().getRefreshToken() != null) {
-            RefreshToken refreshToken = successResponse.getOIDCTokens().getRefreshToken();
-        }
 
         // The required parameters
         // Get the issuer URL from properties
@@ -441,13 +453,15 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
             LogUtil.error(OpenIDDirectoryManager.class.getName(), e, "Invalid Claims");
             return null;
         }
-        return new Object[]{accessToken, idTokenInfo} ;
+        return new Object[]{successResponse.getOIDCTokens(), idTokenInfo} ;
     }
 
 
 
-    void doLogin(UserInfo userInfo, HttpServletRequest request, HttpServletResponse response) throws IOException {
+    void doLogin(UserInfo userInfo, HttpServletRequest request, HttpServletResponse response, AccessToken accessToken, RefreshToken refreshToken) throws IOException {
         try {
+            UserMetaDataDao userMetaDataDao = (UserMetaDataDao) AppUtil.getApplicationContext().getBean("userMetaDataDao");
+            
             // read from properties
             DirectoryManagerProxyImpl dm = (DirectoryManagerProxyImpl) AppUtil.getApplicationContext().getBean("directoryManager");
             SecureDirectoryManagerImpl dmImpl = (SecureDirectoryManagerImpl) dm.getDirectoryManagerImpl();
@@ -524,7 +538,39 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
             UsernamePasswordAuthenticationToken result = new UsernamePasswordAuthenticationToken(username, "", gaList);
             result.setDetails(details);
             SecurityContextHolder.getContext().setAuthentication(result);
+            
+            // save tokens to user meta
+            if("true".equals(dmImpl.getPropertyString("saveAccessToken"))){
+                if(accessToken != null){
+                    UserMetaData umd = userMetaDataDao.getUserMetaData(username, DEFAULT_USER_META_ACCESS_TOKEN_KEY);
+                    if(umd == null){
+                        umd = new UserMetaData();
+                        umd.setUsername(username);
+                        umd.setKey(DEFAULT_USER_META_ACCESS_TOKEN_KEY);
+                        umd.setValue(accessToken.getValue());
+                        userMetaDataDao.addUserMetaData(umd);
+                    }else{
+                        umd.setValue(accessToken.getValue());
+                        userMetaDataDao.updateUserMetaData(umd);
+                    }
+                }
 
+                if(refreshToken != null){
+                    UserMetaData umd = userMetaDataDao.getUserMetaData(username, DEFAULT_USER_META_REFRESH_TOKEN_KEY);
+                    if(umd == null){
+                        umd = new UserMetaData();
+                        umd.setUsername(username);
+                        umd.setKey(DEFAULT_USER_META_REFRESH_TOKEN_KEY);
+                        umd.setValue(refreshToken.getValue());
+                        userMetaDataDao.addUserMetaData(umd);
+                    }else{
+                        umd.setValue(refreshToken.getValue());
+                        userMetaDataDao.updateUserMetaData(umd);
+                    }
+                }
+            }
+            
+            
             // add audit trail
             WorkflowHelper workflowHelper = (WorkflowHelper) AppUtil.getApplicationContext().getBean("workflowHelper");
             workflowHelper.addAuditTrail(this.getClass().getName(), "authenticate", "Authentication for user " + username + ": " + true);
@@ -534,14 +580,21 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
             if (relayState != null && !relayState.isEmpty()) {
                 response.sendRedirect(relayState);
             } else {
-                SavedRequest savedRequest = new HttpSessionRequestCache().getRequest(request, response);
-                String savedUrl = "";
-                if (savedRequest != null) {
-                    savedUrl = savedRequest.getRedirectUrl();
-                } else {
-                    savedUrl = request.getContextPath();
+                Object redirect = request.getSession().getAttribute("oidcRedirect");
+                
+                if(redirect != null){
+                    String redirectUrl = (String) redirect;
+                    response.sendRedirect(redirectUrl);
+                }else{
+                    SavedRequest savedRequest = new HttpSessionRequestCache().getRequest(request, response);
+                    String savedUrl = "";
+                    if (savedRequest != null) {
+                        savedUrl = savedRequest.getRedirectUrl();
+                    } else {
+                        savedUrl = request.getContextPath();
+                    }
+                    response.sendRedirect(savedUrl);
                 }
-                response.sendRedirect(savedUrl);
             }
         } catch (IOException | RuntimeException ex) {
             LogUtil.error(getClass().getName(), ex, "Error in Open ID login");

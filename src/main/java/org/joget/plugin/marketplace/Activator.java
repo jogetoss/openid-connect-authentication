@@ -16,6 +16,7 @@ public class Activator implements BundleActivator {
         //Register plugin here
         registrationList.add(context.registerService(OpenIDDirectoryManager.class.getName(), new OpenIDDirectoryManager(), null));
         registrationList.add(context.registerService(ExtUserSecurityImpl.class.getName(), new ExtUserSecurityImpl(), null));
+        registrationList.add(context.registerService(OpenIDHashVariable.class.getName(), new OpenIDHashVariable(), null));
     }
 
     public void stop(BundleContext context) {

@@ -112,6 +112,19 @@
                         "label": ""
                     }
                 ]
+            },
+            {
+                "name": "saveAccessToken",
+                "label": "@@properties.user.save.access.token@@",
+                "type": "checkbox",
+                "value": "true",
+                "options": [
+                    {
+                        "value": "true",
+                        "label": ""
+                    }
+                ],
+                "description": "Include offline_access in scope for saving refresh token into user meta"
             }
         ]
     },
