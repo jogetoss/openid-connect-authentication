@@ -17,6 +17,7 @@ import com.nimbusds.oauth2.sdk.token.AccessToken;
 import com.nimbusds.oauth2.sdk.token.RefreshToken;
 import com.nimbusds.oauth2.sdk.token.Tokens;
 import com.nimbusds.openid.connect.sdk.OIDCTokenResponseParser;
+import com.nimbusds.openid.connect.sdk.op.OIDCProviderMetadata;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -39,7 +40,7 @@ public class OpenIDHashVariable extends DefaultHashVariablePlugin {
 
     @Override
     public String getVersion() {
-        return "7.0.6";
+        return "7.0.7";
     }
 
     @Override
@@ -105,7 +106,16 @@ public class OpenIDHashVariable extends DefaultHashVariablePlugin {
             try {
                 RefreshToken receivedRefreshToken = new RefreshToken(refreshTokenUmd.getValue());
                 AuthorizationGrant refreshTokenGrant = new RefreshTokenGrant(receivedRefreshToken);
-                URI tokenEndpoint = new URI(dmImpl.getPropertyString("tokenEndpoint"));
+                //URI tokenEndpoint = new URI(dmImpl.getPropertyString("tokenEndpoint"));
+                URI tokenEndpoint;
+                
+                if (dmImpl.getPropertyString("tokenEndpoint").isEmpty()) {
+                    OIDCProviderMetadata providerMetadata = OpenIDDirectoryManager.IssuerDiscovery();
+                    tokenEndpoint = providerMetadata.getTokenEndpointURI();
+                } else {
+                    tokenEndpoint = new URI(dmImpl.getPropertyString("tokenEndpoint"));
+                }
+                
                 ClientID clientID = new ClientID(dmImpl.getPropertyString("clientId"));
                 Secret secret = new Secret(dmImpl.getPropertyString("clientSecret"));
                 ClientAuthentication clientAuth = new ClientSecretBasic(clientID, secret);
