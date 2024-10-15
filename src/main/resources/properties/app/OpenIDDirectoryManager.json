@@ -64,9 +64,6 @@
                 "name": "userinfoAttr",
                 "label": "@@properties.userinfo.attr@@",
                 "type": "selectbox",
-                "control_field": "issuer",
-                "control_value": "custom",
-                "control_use_regex": "false",
                 "required": "true",
                 "options": [{
                         "value": "userinfoAttrDefault",
