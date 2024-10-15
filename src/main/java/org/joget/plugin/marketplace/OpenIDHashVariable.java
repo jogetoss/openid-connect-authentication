@@ -40,7 +40,7 @@ public class OpenIDHashVariable extends DefaultHashVariablePlugin {
 
     @Override
     public String getVersion() {
-        return "7.0.7";
+        return Activator.VERSION;
     }
 
     @Override

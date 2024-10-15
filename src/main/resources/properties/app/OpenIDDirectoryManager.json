@@ -61,6 +61,53 @@
                 "required": "true"
             },
             {
+                "name": "userinfoAttr",
+                "label": "@@properties.userinfo.attr@@",
+                "type": "selectbox",
+                "control_field": "issuer",
+                "control_value": "custom",
+                "control_use_regex": "false",
+                "required": "true",
+                "options": [{
+                        "value": "userinfoAttrDefault",
+                        "label": "@@properties.default@@"
+                    },
+                    {
+                        "value": "userinfoAttrCustom",
+                        "label": "@@properties.custom@@"
+                    }]
+            },
+            {
+                "name": "userinfoAttrUsernameField",
+                "label": "@@properties.userinfo.attr.field.username@@",
+                "type": "textfield",
+                "value": "",
+                "control_field": "userinfoAttr",
+                "control_value": "userinfoAttrCustom",
+                "control_use_regex": "false",
+                "required": "true"
+            },
+            {
+                "name": "userinfoAttrFirstNameField",
+                "label": "@@properties.userinfo.attr.field.firstname@@",
+                "type": "textfield",
+                "value": "",
+                "control_field": "userinfoAttr",
+                "control_value": "userinfoAttrCustom",
+                "control_use_regex": "false",
+                "required": "true"
+            },
+            {
+                "name": "userinfoAttrLastNameField",
+                "label": "@@properties.userinfo.attr.field.lastname@@",
+                "type": "textfield",
+                "value": "",
+                "control_field": "userinfoAttr",
+                "control_value": "userinfoAttrCustom",
+                "control_use_regex": "false",
+                "required": "true"
+            },
+            {
                 "name": "jsonWebKeySet",
                 "label": "@@properties.web.ket.set@@",
                 "type": "textfield",

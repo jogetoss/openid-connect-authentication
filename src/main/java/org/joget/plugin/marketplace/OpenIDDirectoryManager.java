@@ -49,6 +49,7 @@ import com.nimbusds.oauth2.sdk.TokenResponse;
 import com.nimbusds.oauth2.sdk.auth.ClientAuthentication;
 import com.nimbusds.oauth2.sdk.auth.ClientSecretBasic;
 import com.nimbusds.oauth2.sdk.auth.Secret;
+import com.nimbusds.oauth2.sdk.http.HTTPRequest;
 import com.nimbusds.oauth2.sdk.http.HTTPResponse;
 import com.nimbusds.oauth2.sdk.id.ClientID;
 import com.nimbusds.oauth2.sdk.id.Issuer;
@@ -79,6 +80,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.net.URI;
 import java.net.URLDecoder;
+import net.minidev.json.JSONObject;
 import net.sf.ehcache.Cache;
 import org.joget.directory.dao.UserMetaDataDao;
 import org.joget.directory.model.UserMetaData;
@@ -104,7 +106,7 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
 
     @Override
     public String getVersion() {
-        return "7.0.7";
+        return Activator.VERSION;
     }
 
     @Override
@@ -337,27 +339,40 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
         } else {
             UserInfoEndpoint = new URI(dmImpl.getPropertyString("userinfoEndpoint"));
         }
-        HTTPResponse httpResponse = new UserInfoRequest(UserInfoEndpoint, (BearerAccessToken) accessTokenContent).toHTTPRequest().send();
+       // HTTPResponse httpResponse = new UserInfoRequest(UserInfoEndpoint, (BearerAccessToken) accessTokenContent).toHTTPRequest().send();
 
+        HTTPRequest httpRequest = new UserInfoRequest(UserInfoEndpoint, (BearerAccessToken) accessTokenContent).toHTTPRequest();
+        httpRequest.setAccept("application/json");
+        HTTPResponse httpResponse = httpRequest.send();
+ 
         // Parse the response
         UserInfoResponse userInfoResponse = null;
         try {
-            userInfoResponse = UserInfoResponse.parse(httpResponse);
+            JSONObject jsonResponse = httpResponse.getContentAsJSONObject();
+
+            if (jsonResponse.containsKey("id")) {
+                String idValue = jsonResponse.getAsString("id");
+                jsonResponse.put("sub", idValue); 
+                UserInfo userInfo = new UserInfo(jsonResponse);
+                return userInfo;
+            } else {
+                userInfoResponse = UserInfoResponse.parse(httpResponse);
+                if (userInfoResponse != null) {
+                    if (!userInfoResponse.indicatesSuccess()) {
+                        LogUtil.error(OpenIDDirectoryManager.class.getName(), null, "The request failed, e.g. due to invalid or expired token");
+                        return null;
+                    }
+                    // Extract the claims
+                    UserInfo userInfo = userInfoResponse.toSuccessResponse().getUserInfo();
+                    return userInfo;
+                }
+            }
         } catch (ParseException ex) {
             LogUtil.error(OpenIDDirectoryManager.class.getName(), ex, "Failed to parse userInfo Response");
+            
             return null;
         }
-
-        if (userInfoResponse != null) {
-            if (!userInfoResponse.indicatesSuccess()) {
-                LogUtil.error(OpenIDDirectoryManager.class.getName(), null, "The request failed, e.g. due to invalid or expired token");
-                return null;
-            }
-            // Extract the claims
-            UserInfo userInfo = userInfoResponse.toSuccessResponse().getUserInfo();
-            return userInfo;
-        }
-        return null;
+       return null;
     }
 
     /**
@@ -468,11 +483,21 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
 
             //String certificate = dmImpl.getPropertyString("certificate");
             boolean userProvisioningEnabled = Boolean.parseBoolean(dmImpl.getPropertyString("userProvisioning"));
-            String username;
-            if (userInfo.getPreferredUsername() != null) {
-                username = userInfo.getPreferredUsername();
+
+            // get custom user info from user
+            String username = "";
+            String firstName = "";
+            String lastName = "";
+            if (dmImpl.getPropertyString("userinfoAttr").equals("userinfoAttrCustom")){
+                username = userInfo.getClaim(dmImpl.getPropertyString("userinfoAttrUsernameField")).toString();
+                firstName = userInfo.getClaim(dmImpl.getPropertyString("userinfoAttrFirstNameField")).toString();
+                lastName = userInfo.getClaim(dmImpl.getPropertyString("userinfoAttrLastNameField")).toString();
             } else {
-                username = userInfo.getEmailAddress();
+                if (userInfo.getPreferredUsername() != null) {
+                    username = userInfo.getPreferredUsername();
+                } else {
+                    username = userInfo.getEmailAddress();
+                }
             }
 
             // get user
@@ -488,13 +513,19 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
                     user.setEmail(userInfo.getEmailAddress());
                 }
 
-                if (userInfo.getGivenName() != null && !userInfo.getGivenName().isEmpty()) {
-                    user.setFirstName(userInfo.getGivenName());
+                if (dmImpl.getPropertyString("userinfoAttr").equals("userinfoAttrCustom")){
+                    user.setFirstName(firstName);
+                    user.setLastName(lastName);
+                } else {
+                    if (userInfo.getGivenName() != null && !userInfo.getGivenName().isEmpty()) {
+                        user.setFirstName(userInfo.getGivenName());
+                    }
+    
+                    if (userInfo.getFamilyName() != null && !userInfo.getFamilyName().isEmpty()) {
+                        user.setLastName(userInfo.getFamilyName());
+                    }
                 }
-
-                if (userInfo.getFamilyName() != null && !userInfo.getFamilyName().isEmpty()) {
-                    user.setLastName(userInfo.getFamilyName());
-                }
+              
 
                 if (userInfo.getLocale() != null && !userInfo.getLocale().isEmpty()) {
                     user.setLocale(userInfo.getLocale());

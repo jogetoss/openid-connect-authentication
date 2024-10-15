@@ -28,7 +28,7 @@ public class ExtUserSecurityImpl extends UserSecurityImpl implements HiddenPlugi
 
     @Override
     public String getVersion() {
-        return "7.0.7";
+        return Activator.VERSION;
     }
     
     @Override
