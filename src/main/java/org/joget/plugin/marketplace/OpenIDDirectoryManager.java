@@ -80,10 +80,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.net.URI;
 import java.net.URLDecoder;
+import javax.servlet.http.HttpSession;
 import net.minidev.json.JSONObject;
 import net.sf.ehcache.Cache;
 import org.joget.directory.dao.UserMetaDataDao;
 import org.joget.directory.model.UserMetaData;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.web.savedrequest.HttpSessionRequestCache;
 import org.springframework.security.web.savedrequest.SavedRequest;
 
@@ -569,6 +571,12 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
             UsernamePasswordAuthenticationToken result = new UsernamePasswordAuthenticationToken(username, "", gaList);
             result.setDetails(details);
             SecurityContextHolder.getContext().setAuthentication(result);
+            
+            SecurityContext securityContext = SecurityContextHolder.getContext();
+            securityContext.setAuthentication(result);
+
+            HttpSession session = request.getSession(true);
+            session.setAttribute("SPRING_SECURITY_CONTEXT", securityContext);
             
             // save tokens to user meta
             if("true".equals(dmImpl.getPropertyString("saveAccessToken"))){
