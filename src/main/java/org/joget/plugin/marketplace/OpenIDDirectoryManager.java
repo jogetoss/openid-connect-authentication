@@ -72,6 +72,10 @@ import com.nimbusds.openid.connect.sdk.claims.UserInfo;
 import com.nimbusds.openid.connect.sdk.op.OIDCProviderMetadata;
 import com.nimbusds.openid.connect.sdk.token.OIDCTokens;
 import com.nimbusds.openid.connect.sdk.validators.IDTokenValidator;
+import com.nimbusds.jose.jwk.source.RemoteJWKSet;
+import com.nimbusds.jose.proc.JWSVerificationKeySelector;
+import com.nimbusds.jose.util.DefaultResourceRetriever;
+import java.util.concurrent.ConcurrentHashMap;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URISyntaxException;
@@ -93,6 +97,16 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
     
     public static final String DEFAULT_USER_META_ACCESS_TOKEN_KEY = "oidcAccessToken";
     public static final String DEFAULT_USER_META_REFRESH_TOKEN_KEY = "oidcRefreshToken";
+
+    // Timeouts (ms) and size limit (bytes) for downloading the identity provider's JWK set.
+    // Nimbus' built-in defaults (500 ms / 500 ms / 50 KB) are too tight for remote providers such as Auth0.
+    private static final int JWK_SET_CONNECT_TIMEOUT_MS = 5000;
+    private static final int JWK_SET_READ_TIMEOUT_MS = 5000;
+    private static final int JWK_SET_SIZE_LIMIT_BYTES = 512 * 1024;
+
+    // ID token validators are cached so that the downloaded JWK set (cached inside RemoteJWKSet)
+    // is reused across logins instead of being fetched again on every login.
+    private static final Map<String, IDTokenValidator> ID_TOKEN_VALIDATORS = new ConcurrentHashMap<String, IDTokenValidator>();
 
     public SecureDirectoryManagerImpl dirManager;
 
@@ -231,13 +245,25 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
                 if (authCode != null) {
                     String code = URLDecoder.decode(authCode.getValue(), "UTF-8");
                     Object[] accessTokenArray = getTokenForCode(code, nonce);
-                    
+                    if (accessTokenArray == null) {
+                        // the cause has already been logged by getTokenForCode
+                        request.getSession().setAttribute("SPRING_SECURITY_LAST_EXCEPTION", "Error in Redirecting To External Login Page");
+                        response.sendRedirect(url);
+                        return;
+                    }
+
                     OIDCTokens oidcTokens = (OIDCTokens) accessTokenArray[0];
                     AccessToken accessToken = oidcTokens.getAccessToken();
                     RefreshToken refreshToken = oidcTokens.getRefreshToken();
                     
                     ClaimsSet idTokenClaims = (ClaimsSet) accessTokenArray[1];
                     UserInfo userInfo = getUserInfo(accessToken);
+                    if (userInfo == null) {
+                        LogUtil.error(OpenIDDirectoryManager.class.getName(), null, "Unable to retrieve user info");
+                        request.getSession().setAttribute("SPRING_SECURITY_LAST_EXCEPTION", "Error in Redirecting To External Login Page");
+                        response.sendRedirect(url);
+                        return;
+                    }
                     userInfo.putAll(idTokenClaims);
                     doLogin(userInfo, request, response, accessToken, refreshToken);
                 }
@@ -457,8 +483,8 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
         JWSAlgorithm jwsAlg = JWSAlgorithm.RS256;
         URL jwkSetURL = jwkSetUri.toURL();
 
-        // Create validator for signed ID tokens
-        IDTokenValidator validator = new IDTokenValidator(iss, clientID, jwsAlg, jwkSetURL);
+        // Get (or create) the cached validator for signed ID tokens
+        IDTokenValidator validator = getIdTokenValidator(iss, clientID, jwsAlg, jwkSetURL);
 
         // Set the expected nonce, leave null if none
         Nonce expectedNonce = nonce; // or null
@@ -466,14 +492,34 @@ public class OpenIDDirectoryManager extends SecureDirectoryManager {
         try {
             IDTokenClaimsSet claims = validator.validate(idToken, expectedNonce);
             idTokenInfo = (ClaimsSet) claims;
-        } catch (BadJOSEException | JOSEException e) {
+        } catch (BadJOSEException e) {
             LogUtil.error(OpenIDDirectoryManager.class.getName(), e, "Invalid Claims");
+            return null;
+        } catch (JOSEException e) {
+            // e.g. the JWK set could not be retrieved from the identity provider (timeout, network error)
+            LogUtil.error(OpenIDDirectoryManager.class.getName(), e, "Unable to validate ID token (JWK set retrieval or signature processing failed)");
             return null;
         }
         return new Object[]{successResponse.getOIDCTokens(), idTokenInfo} ;
     }
 
 
+
+    /**
+     * Returns an ID token validator for the given issuer/client/JWK set URL. Validators are cached so the
+     * remote JWK set is reused across logins, and they download the JWK set with sensible timeouts.
+     */
+    private static IDTokenValidator getIdTokenValidator(Issuer iss, ClientID clientID, JWSAlgorithm jwsAlg, URL jwkSetURL) {
+        String cacheKey = iss.getValue() + "|" + clientID.getValue() + "|" + jwsAlg.getName() + "|" + jwkSetURL.toExternalForm();
+        IDTokenValidator validator = ID_TOKEN_VALIDATORS.get(cacheKey);
+        if (validator == null) {
+            DefaultResourceRetriever retriever = new DefaultResourceRetriever(JWK_SET_CONNECT_TIMEOUT_MS, JWK_SET_READ_TIMEOUT_MS, JWK_SET_SIZE_LIMIT_BYTES);
+            JWSVerificationKeySelector keySelector = new JWSVerificationKeySelector(jwsAlg, new RemoteJWKSet(jwkSetURL, retriever));
+            validator = new IDTokenValidator(iss, clientID, keySelector, null);
+            ID_TOKEN_VALIDATORS.put(cacheKey, validator);
+        }
+        return validator;
+    }
 
     void doLogin(UserInfo userInfo, HttpServletRequest request, HttpServletResponse response, AccessToken accessToken, RefreshToken refreshToken) throws IOException {
         try {
